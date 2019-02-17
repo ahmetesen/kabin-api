@@ -1,0 +1,555 @@
+process.env.FIREBASE_CONFIG = JSON.stringify({
+    apiKey: "AIzaSyBQn5eEA_v6_g2t_jviSE5kuWVIScgUOwg",
+    databaseURL: "https://kabin-64963.firebaseio.com",
+    storageBucket: "kabin-64963.appspot.com",
+    authDomain: "kabin-64963.firebaseapp.com",
+    messagingSenderId: "625321362515",
+    projectId: "kabin-64963"
+});
+
+const { Expo } = require('expo-server-sdk');
+const functions = require('firebase-functions');
+const admin = require('firebase-admin');
+const config = functions.config().firebase;
+admin.initializeApp(config);
+var db = admin.database();
+let expo = new Expo();
+
+exports.helloWorld = functions.https.onRequest((request, response) => {
+    return {data: "hello there"};
+});
+
+exports.setPushToken = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var token = data.token;
+    return updateDbRow("users/"+uid,{token}).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+})
+
+exports.saveNewUser = functions.https.onCall((data,context)=>{
+    var email = context.auth.token.email;
+    var displayName = data.displayName;
+    var uid = context.auth.uid;
+    var token = data.token?data.token:"";
+    if(!email || !displayName)
+        return {status:400, errorCode:0, error: "displayName ya da email gönderilmedi :("};
+    return checkUserExist(uid).then((user)=>{
+        if(user)
+        { //TODO check user's push token. If not equal with db, change it.
+            if(user.token && user.token === token)
+                return {status:200,user};
+            else
+                return updateDbRow("users/"+uid,{token}).then(()=>{
+                    return {statusCode:200,user};
+                }).catch((error)=>{
+                    return {statusCode:500,error};
+                });
+        }
+        else
+            return addNewUser(displayName,email,uid,token).then((user)=>{
+                return {status:200,user};
+            }).catch((error)=>{
+                return {status:500,error};
+            });
+    }).catch((error)=>{
+        return {status:500, error: error.message};
+    })
+});
+
+const checkUserExist = function(uid){
+    return new Promise((resolve,reject)=>{
+        db.ref(`users`).once('value', snapshot => {
+            if (snapshot && snapshot.hasChild(uid)){
+                return resolve(snapshot.child(uid).val());
+            }
+            else
+                return resolve();
+        },(error)=>{
+            return reject(error);
+        });
+    });
+}
+
+const addNewUser = function(displayName,email,uid,token){
+    return new Promise((resolve,reject)=>{
+        var currentTimeStamp = Date.now();
+
+        var adTitle = "";
+        db.ref('ads/0/title').once('value',(snapShot)=>{
+            if(!snapShot){
+                return reject(new Error("db Error"));
+            }
+            adTitle = snapShot.val().toString();
+            db.ref(`users/` + uid).set({
+                displayName:displayName,
+                email:email,
+                position:"",
+                about:"",
+                token:token,
+                rooms:{
+                    Z:{
+                        adId:0,
+                        lastMessage:adTitle,
+                        timeStamp:currentTimeStamp,
+                        isAlive:true,
+                        mustShown:false,
+                        readYet:false,
+                        image:"",
+                    },
+                    0:{
+                        lastMessage:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. İletişim formuydu, maildi falan hiç uğraşmayalım, di mi?",
+                        timeStamp:currentTimeStamp,
+                        isAlive:true,
+                        mustShown:true,
+                        readYet:false,
+                    }
+                }
+            },
+            (error)=>{
+                if(error)
+                    reject(error);
+                else{
+                    db.ref(`rooms/` + `bot-` + uid).set({
+                        isAlive:true,
+                        flightCode:'',
+                        flightDate:0,
+                        status:'',
+                        users:{
+                            0:0,
+                            1:uid
+                        },
+                        messages:{
+                            0:{
+                                messageType:0,
+                                sender:0,
+                                messageDate:currentTimeStamp,
+                                message:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. İletişim formuydu, maildi falan hiç uğraşmayalım, di mi?"
+                            }
+                        }
+                    },
+                    (error)=>{
+                        if(error)
+                            reject(error);
+                        else{
+                            checkUserExist(uid).then((data)=>{
+                                return resolve(data);
+                            }).catch((error)=>{
+                                return reject(error);
+                            })
+                        }
+                    });
+                }
+            });
+        },(error)=>{
+            if(error)
+                reject(error);
+        });        
+    });
+}
+
+const checkUserLogged = function(uid,idToken){
+    return new Promise((resolve,reject)=>{
+        admin.auth().verifyIdToken(idToken)
+        .then((decodedToken)=>{
+            if(uid === decodedToken.uid)
+                return resolve();
+            else
+                return reject(new Error("kullanıcı eşleşmedi"));
+        }).catch((error)=>{
+            reject(error);
+        });
+    });
+}
+
+exports.getNameOfUser = functions.https.onCall((data,context)=>{
+    return getNameFromUid(data.uid).then((name)=>{
+        if(name){
+            return {statusCode:200,name:name};
+        }
+        else{
+            return {statusCode:400,name:""};
+        }
+    }).catch((error)=>{
+        return {statusCode: 500};
+    });
+});
+
+exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var name = data.displayName;
+    var timeStamp = data.timeStamp;
+    var flightCode = data.flightCode;
+    var roomName = timeStamp + '+' + flightCode;
+    
+    return checkAndGetSnapShotOfPath('users/'+uid+'/'+'/rooms/'+roomName).then((usersRoomData)=>{
+        if(usersRoomData){
+            return{statusCode:200};
+        }
+        else{
+            return checkAndGetSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
+                if(roomData){
+                    var lastMessage = roomData.messages[roomData.messages.length-1].message;
+                    var lastMessageTime = roomData.messages[roomData.messages.length-1].messageDate;
+                    var isAlive = roomData.isAlive;
+                    if(roomData.users.indexOf(uid)<0){
+                        return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
+                            return attachNewUserToRoom(uid,roomName,roomData.users.length).then(()=>{
+                                roomData.users[roomData.users.length] = uid;
+                                var message = "@"+name+"@ kabine katıldı.";
+                                return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
+                                    return {statusCode:200};
+                                });
+                            });
+                        });
+                    }
+                    else{
+                        return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
+                            return {statusCode:200};
+                        });
+                    }
+                }
+                else{
+                    return createNewRoomAndBootstrapWithUser(uid,flightCode,timeStamp).then(()=>{
+                        return {statusCode:200};
+                    });
+                }
+            });
+        }
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+
+});
+
+const sendMessageToRoomAndUpdateAllUsersLastMessage = function(roomName, timeStamp, senderId, messageType, message, roomData){
+    return new Promise((resolve,reject)=>{
+        if(roomData){
+            var newMessageId = roomData.messages.length;
+            db.ref('rooms/'+roomName+'/messages/'+newMessageId).set({
+                message:message,
+                messageDate:Date.now(),
+                messageType:messageType,
+                sender:senderId
+            },(error)=>{
+                if(error)
+                    return reject(error);
+                else{
+                    var promises = [];
+                    var users = roomData.users;
+                    if(roomName.startsWith("bot")){
+                        roomName = "0";
+                    }
+                    for(var i = 1;i<users.length;i++){
+                        promises.push(updateUsersMessage(users[i],roomName,message));
+
+                    }
+                    promises.push(userSeesAllMessages(senderId,roomName));
+                    Promise.all(promises).then(()=>{
+                        return resolve();
+                    }).catch((error)=>{
+                        return reject(error);
+                    })
+                }
+            })
+        }
+        else
+            return reject(new Error("no roomData supplied"));
+    })
+}
+
+const updateUsersMessage = function(uid,roomName,message){
+    return new Promise((resolve,reject)=>{
+        db.ref('users/'+uid+'/rooms/'+roomName).update({
+            lastMessage:message,
+            timeStamp:Date.now(),
+            readYet:false
+        },
+        (error)=>{
+            if(error)
+                reject(error);
+            else
+                resolve();
+        });
+    });
+}
+
+const attachNewUserToRoom = function(uid,roomName,order){
+    return new Promise((resolve,reject)=>{
+        db.ref('rooms/'+roomName+'/users/'+order).set(uid,(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        })
+    })
+}
+
+const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
+    return new Promise((resolve,reject)=>{
+        return getNameFromUid(uid).then((name)=>{
+            var message = "@"+name+"@ kabine katıldı.";
+            var isAlive = true;
+            return db.ref('rooms/' + timeStamp +'+'+ flightCode).set({
+                flightCode:flightCode,
+                flightDate:timeStamp,
+                isAlive:isAlive,
+                users:{
+                    0:0,
+                    1:uid
+                },
+                messages:{
+                    0:{
+                        message:'Uçuş kabini oluşturuldu.',
+                        messageDate:timeStamp,
+                        messageType:0,
+                        sender:0
+                    },
+                    1:{
+                        message:message,
+                        messageDate:timeStamp,
+                        messageType:0,
+                        sender:0
+                    }
+                }
+            },
+            (error)=>{
+                if(error){
+                    return reject(error);
+                }
+                else{
+                    return attachNewRoomToUser(uid,flightCode,timeStamp,message,isAlive).then(()=>{
+                        return resolve();
+                    }).catch((error)=>{
+                        return reject(error);
+                    });
+                }
+            });
+        }).catch((error)=>{
+            return reject(error);
+        })
+    })
+};
+
+const attachNewRoomToUser = function(uid,flightCode,flightDate,lastMessage,isAlive){
+    return new Promise((resolve,reject)=>{
+        db.ref('users/' + uid + '/rooms/' + flightDate +'+'+ flightCode).set({
+            isAlive:isAlive,
+            lastMessage:lastMessage,
+            mustShown:true,
+            readYet:false,
+            timeStamp:Date.now()
+        },(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
+
+exports.sendNewMessage = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var roomName = data.roomName;
+    var message = data.message;
+    var timeStamp = Date.now();
+    return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
+        return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
+            
+            var tokens = [];
+            var flightCode = roomData.flightCode;
+            var flightDate = roomData.flightDate;
+            var users = roomData.users;
+            var tokenPromises = [];
+
+            for(user of roomData.users){
+                if(user === uid || user === 0){
+                    continue;
+                }
+                tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
+            }
+
+            return Promise.all(tokenPromises).then((tokens)=>{
+                message = flightCode + " uçuşunda yeni bir mesaj var!";
+                return sendPushNotificationToRoom(tokens,message).then(()=>{
+                    return {statusCode:200};
+                })
+            });
+        });
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+const sendPushNotificationToRoom = async function(tokens,message){
+    let messages = [];
+    for (let pushToken of tokens){
+        if (!Expo.isExpoPushToken(pushToken)){
+            console.error(`Push token ${pushToken} is not a valid Expo push token`);
+            continue;
+        }
+        messages.push({
+            to: pushToken,
+            sound: 'default',
+            body: message
+        })
+    }
+    let chunks = expo.chunkPushNotifications(messages);
+    let tickets = [];
+    (()=>{
+        for (let chunk of chunks){
+            try{
+                expo.sendPushNotificationsAsync(chunk).then((ticketChunk)=>{
+                    console.log(ticketChunk);
+                    tickets.push(...ticketChunk);
+                    return 0;
+                }).catch((error)=>{
+                    console.error(error);
+                })
+            } 
+            catch(error){
+                console.error(error);
+            }
+        }
+    })();
+}
+
+exports.userSeesMessages = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var roomName = data.roomName;
+    if(roomName.startsWith("bot")){
+        roomName = "0";
+    }
+    return userSeesAllMessages(uid,roomName).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+const userSeesAllMessages = function(uid,roomName){
+    return new Promise((resolve,reject)=>{
+        db.ref('users/'+uid+'/rooms/'+roomName+'/readYet').set(true,(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
+
+exports.getAdDetails = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var adId = data.adId;
+    if(adId!==null && adId !== undefined && adId!==""){
+        return getAdDetailsInDb(adId).then((data)=>{
+            return {statusCode:200,ad:data};
+        }).catch((error)=>{
+            return {statusCode:500,error:error};
+        });
+    }
+    
+});
+
+const getAdDetailsInDb = function(id){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath('ads/'+id).then((data)=>{
+            return resolve(data);
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
+exports.adClick = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var adId = data.adId;
+    var timeStamp = Date.now();
+    return setAdClick(uid,adId,timeStamp).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+const setAdClick = function(uid,adId,timeStamp){
+    return new Promise((resolve,reject)=>{
+        db.ref('adClicks').push({
+            adId:adId,
+            uid:uid,
+            timeStamp:timeStamp
+        },(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
+
+/**
+ * returns promise with a displayName string given uid
+ * @param uid user id that want to get name
+ */
+const getNameFromUid = function(uid){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath('users/'+uid+'/displayName').then((data)=>{
+            return resolve(data);
+        }).catch((error)=>{
+            return (reject(error));
+        });
+    });
+}
+
+/**
+ * if there is no snapshot, method returns reject with string
+ * @param path snapshot's path 
+ */
+const getSnapShotOfPath = function(path){
+    return new Promise((resolve,reject)=>{
+        db.ref(path).once('value',(snapShot)=>{
+            if(snapShot)
+                return resolve(snapShot.val());
+            else
+                return reject(new Error("there is no snapshot of "+path));
+        },(error)=>{
+            return reject(error);
+        });
+    });
+};
+
+/**
+ * if there is no snapshot, method returns resolve with null
+ * @param path snapshot's path 
+ */
+const checkAndGetSnapShotOfPath = function(path){
+    return new Promise((resolve,reject)=>{
+        db.ref(path).once('value',(snapShot)=>{
+            if(snapShot)
+                return resolve(snapShot.val());
+            else
+                return resolve(null);
+        },(error)=>{
+            return reject(error);
+        });
+    });
+};
+
+/**
+ * if there is no snapshot, method returns resolve with null
+ * @param path db path where to write 
+ * @param value value to write
+ */
+const updateDbRow = function(path,value){
+    return new Promise((resolve,reject)=>{
+        db.ref(path).update(value,
+        (error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
