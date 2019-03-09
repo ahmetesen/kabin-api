@@ -232,7 +232,10 @@ const sendMessageToRoomAndUpdateAllUsersLastMessage = function(roomName, timeSta
                 message:message,
                 messageDate:Date.now(),
                 messageType:messageType,
-                sender:senderId
+                sender:senderId,
+                hiddenFrom:{
+
+                }
             },(error)=>{
                 if(error)
                     return reject(error);
@@ -305,13 +308,18 @@ const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
                         message:'Uçuş kabini oluşturuldu.',
                         messageDate:timeStamp,
                         messageType:0,
-                        sender:0
+                        sender:0,
+                        hiddenFrom:{
+                        }
                     },
                     1:{
                         message:message,
                         messageDate:timeStamp,
                         messageType:0,
-                        sender:0
+                        sender:0,
+                        hiddenFrom:{
+
+                        }
                     }
                 }
             },
@@ -473,6 +481,64 @@ exports.adClick = functions.https.onCall((data,context)=>{
         return {statusCode:500,error:error};
     });
 });
+
+exports.deleteMessage = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var messageId = data.messageId;
+    var roomName = data.roomName;
+    return deleteMessageFromUser(uid,roomName,messageId).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+exports.reportUserOrMessage = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var roomName = data.roomName;
+    var messageId = data.messageId;
+    var timeStamp = Date.now();
+    if(!uid || !messageId || !roomName)
+        return {statusCode: 400, error: "Şikayet parametrelerini eksik gönderdin"};
+    return saveReportedUserOrMessage(uid,roomName,messageId).then(()=>{
+        var botRoom = "bot-"+uid;
+        return getSnapShotOfPath('rooms/'+botRoom).then((roomData)=>{
+            var message  = "Şikayetin bize ulaştı. İnceleyip sana buradan bilgi vereceğiz. Bu arada, bilmeni isteriz ki sen de buradan bize ulaşabilirsin."
+            return sendMessageToRoomAndUpdateAllUsersLastMessage(botRoom,timeStamp,0,0,message,roomData).then(()=>{
+                return {statusCode:200};
+            });
+        });
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+const saveReportedUserOrMessage = function(uid,roomName,messageId){
+    return new Promise((resolve,reject)=>{
+        db.ref('reportActions').push({
+            reporterId:uid,
+            roomName:roomName,
+            messageId:messageId
+        },(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
+
+const deleteMessageFromUser = function(uid, roomName, messageId){
+    return new Promise((resolve,reject)=>{
+        var hiddenFromPath = 'rooms/'+roomName+'/messages/'+messageId+'/hiddenFrom';
+        db.ref(hiddenFromPath).push(uid,(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        });
+    });
+}
 
 const setAdClick = function(uid,adId,timeStamp){
     return new Promise((resolve,reject)=>{

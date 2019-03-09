@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "kabinapp"
+  },
+  "targets": {
+    "kabin-64963": {
+      "hosting": {
+        "kabinapp": [
+          "kabinapp"
+        ],
+        "default": [
+          "kabin-64963"
+        ]
+      }
+    }
+  }
+}
