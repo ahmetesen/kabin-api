@@ -540,6 +540,94 @@ const deleteMessageFromUser = function(uid, roomName, messageId){
     });
 }
 
+exports.blockUser = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var target = data.targetId;
+    var timeStamp = Date.now();
+    return blockSelectedUser(uid,target).then(()=>{
+        var botRoom = "bot-"+uid;
+        return getSnapShotOfPath('rooms/'+botRoom).then((roomData)=>{
+            var message  = "Bir kullanıcıyı engelledin. Engellediğin kullanıcıları ayarlar ekranında görebilirsin.";
+            return sendMessageToRoomAndUpdateAllUsersLastMessage(botRoom,timeStamp,0,0,message,roomData).then(()=>{
+                return {statusCode:200};
+            });
+        });
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    });
+});
+
+const blockSelectedUser = function(uid,target){
+    return new Promise((resolve, reject)=>{
+        var timeStamp = Date.now();
+        db.ref('users/'+uid+'/blocked/'+target).set(true,(error)=>{
+            if(error)
+                return reject(error);
+            else{
+                return resolve();
+            }
+        });
+    });
+}
+
+exports.unblockUser = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var target = data.targetId;
+    var timeStamp = Date.now();
+    return unblockSelectedUser(uid,target).then(()=>{
+        var botRoom = "bot-"+uid;
+        return getSnapShotOfPath('rooms/'+botRoom).then((roomData)=>{
+            var message  = "Kullanıcının engeli kaldırıldı.";
+            return sendMessageToRoomAndUpdateAllUsersLastMessage(botRoom,timeStamp,0,0,message,roomData).then(()=>{
+                return {statusCode:200};
+            });
+        });
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    })
+});
+
+const unblockSelectedUser = function(uid,target,timeStamp){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath('users/'+uid+'/blocked/'+target).then((data)=>{
+            if(data){
+                return db.ref('users/'+uid+'/blocked/'+target).set(false,(error)=>{
+                    if(error)
+                        return reject(error);
+                    else{
+                        return resolve();
+                    }
+                });
+            }
+            else
+                return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
+exports.saveAbout = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var about = data.about;
+    return saveAboutText(uid,about).then(()=>{
+        return {statusCode:200}
+    }).catch((error)=>{
+        return {statusCode:500,error:error}
+    })
+})
+
+const saveAboutText = function(uid,text){
+    return new Promise((resolve,reject)=>{
+        db.ref('users/'+uid+'/about').set(text,(error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        })
+    });
+}
+
 const setAdClick = function(uid,adId,timeStamp){
     return new Promise((resolve,reject)=>{
         db.ref('adClicks').push({
