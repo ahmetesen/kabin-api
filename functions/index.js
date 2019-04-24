@@ -14,6 +14,7 @@ const config = functions.config().firebase;
 admin.initializeApp(config);
 var db = admin.database();
 let expo = new Expo();
+const adminMail = "ahmetesen88@gmail.com"
 
 exports.helloWorld = functions.https.onRequest((request, response) => {
     return {data: "hello there"};
@@ -86,6 +87,7 @@ const addNewUser = function(displayName,email,uid,token){
             db.ref(`users/` + uid).set({
                 displayName:displayName,
                 email:email,
+                alertAdmin:true,
                 position:"",
                 about:"",
                 token:token,
@@ -198,7 +200,7 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                         return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
                             return attachNewUserToRoom(uid,roomName,roomData.users.length).then(()=>{
                                 roomData.users[roomData.users.length] = uid;
-                                var message = "@"+name+"@ kabine katıldı.";
+                                var message = name+" kabine katıldı.";
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
                                     return {statusCode:200};
                                 });
@@ -293,7 +295,7 @@ const attachNewUserToRoom = function(uid,roomName,order){
 const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
     return new Promise((resolve,reject)=>{
         return getNameFromUid(uid).then((name)=>{
-            var message = "@"+name+"@ kabine katıldı.";
+            var message = name+" kabine katıldı.";
             var isAlive = true;
             return db.ref('rooms/' + timeStamp +'+'+ flightCode).set({
                 flightCode:flightCode,
@@ -707,3 +709,77 @@ const updateDbRow = function(path,value){
         });
     });
 }
+
+
+
+/**
+ * Admin Site functions...
+ */
+
+exports.getBotRoomList = functions.https.onCall((data,context)=>{
+    var mail = context.auth.token.email;
+    if(mail !== adminMail)
+        return {statusCode:401,error:"User has not admin rights"}
+    return getAllUsers().then((users)=>{
+        return {statusCode:200,users:users};
+    }).catch((error)=>{
+        return {statusCode:500,error:error}
+    })
+});
+
+const getAllUsers = function(){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath("users").then((data)=>{
+            var users = [];
+            for(key in data){
+                users.push({id:key, displayName:data[key].displayName, email: data[key].email, alertAdmin:data[key].alertAdmin })
+            }
+            return resolve(users);
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
+exports.sendMessageFromAdminToUser = functions.https.onCall((data,context)=>{
+    var mail = context.auth.token.email;
+    if(mail !== adminMail)
+        return {statusCode:401,error:"User has not admin rights"}
+
+    var uid = 0;
+    var roomName = data.roomName;
+    var message = data.message;
+    var timeStamp = Date.now();
+    return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
+        return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
+            var tokenPromises = [];
+            for(user of roomData.users){
+                if(user === uid || user === 0){
+                    continue;
+                }
+                tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
+            }
+            return Promise.all(tokenPromises).then((tokens)=>{
+                message = "Kabin İletişim'den yeni bir mesaj var!";
+                return sendPushNotificationToRoom(tokens,message).then(()=>{
+                    return {statusCode:200};
+                });
+            });
+        });
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+exports.markUserAsAlertRead = functions.https.onCall((data,context)=>{
+    var uid = data.uid;
+    return updateDbRow("users/"+uid,{alertAdmin:false}).then(()=>{
+        return {statusCode:200}
+    }).catch((error)=>{
+        return {statusCode:500}
+    });
+});
+
+ /**
+  * Admin Site functions end.
+  */

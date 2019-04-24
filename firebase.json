@@ -8,23 +8,13 @@
   "database": {
     "rules": "database.rules.json"
   },
-  "hosting": [{
-    "target":"default",
+  "hosting": {
     "public": "public",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ]
-  },
-  {
     "target":"kabinapp",
-    "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ]
   }
-]
 }
