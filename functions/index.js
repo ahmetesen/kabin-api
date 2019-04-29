@@ -187,8 +187,23 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
     var roomName = timeStamp + '+' + flightCode;
     
     return checkAndGetSnapShotOfPath('users/'+uid+'/'+'/rooms/'+roomName).then((usersRoomData)=>{
-        if(usersRoomData){
+        if(usersRoomData && usersRoomData.deleted!==true && usersRoomData.archived !== true){
             return{statusCode:200};
+        }
+        else if(usersRoomData && usersRoomData.deleted===true){
+            var message = name+" Kabin'e Tekrar Katıldı!";
+            return awakeDeletedRoom(uid,roomName).then(()=>{
+                return dearchiveRoom(uid,roomName).then(()=>{
+                    return sendNewMessage(0,roomName,message,timeStamp).then(()=>{
+                        return{statusCode:200};
+                    });
+                });
+            });
+        }
+        else if(usersRoomData && usersRoomData.archived===true){
+            return dearchiveRoom(uid,roomName).then(()=>{
+                return{statusCode:200};
+            });
         }
         else{
             return checkAndGetSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
@@ -200,7 +215,7 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                         return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
                             return attachNewUserToRoom(uid,roomName,roomData.users.length).then(()=>{
                                 roomData.users[roomData.users.length] = uid;
-                                var message = name+" kabine katıldı.";
+                                var message = name+" Kabin'e Katıldı!";
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
 
                                     var tokenPromises = [];
@@ -221,7 +236,7 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                                 userTokens.push(user.token);
                                         });
                                         
-                                        message = flightCode + " - "+name+" Kabine Katıldı!";
+                                        message = flightCode + " - "+name+" Kabin'e Katıldı!";
                                         return sendPushNotificationToRoom(userTokens,message).then(()=>{
                                             return {statusCode:200};
                                         })
@@ -318,7 +333,7 @@ const attachNewUserToRoom = function(uid,roomName,order){
 const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
     return new Promise((resolve,reject)=>{
         return getNameFromUid(uid).then((name)=>{
-            var message = name+" kabine katıldı.";
+            var message = name+" Kabin'e katıldı.";
             var isAlive = true;
             return db.ref('rooms/' + timeStamp +'+'+ flightCode).set({
                 flightCode:flightCode,
@@ -330,7 +345,7 @@ const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
                 },
                 messages:{
                     0:{
-                        message:'Uçuş kabini oluşturuldu.',
+                        message:'Kabin oluşturuldu.',
                         messageDate:timeStamp,
                         messageType:0,
                         sender:0,
@@ -725,37 +740,80 @@ exports.archiveRoom = functions.https.onCall((data,context)=>{
         return {statusCode:500,error:"oda ismi boş olamaz."}
     var room = data.roomName;
     var uid = context.auth.uid;
-    return updateDbRow("users/"+uid+"/rooms/"+room,{archived:true}).then(()=>{
+    return archiveRoom(uid,room).then(()=>{
         return {statusCode:200};
     }).catch((error)=>{
         return {statusCode:500,error};
     });
 });
+
+const archiveRoom = function(uid,room){
+    return new Promise((resolve,reject)=>{
+        return updateDbRow("users/"+uid+"/rooms/"+room,{archived:true}).then(()=>{
+            return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
 
 exports.dearchiveRoom = functions.https.onCall((data,context)=>{
     if(!data || data.roomName==="")
         return {statusCode:500,error:"oda ismi boş olamaz."}
     var room = data.roomName;
     var uid = context.auth.uid;
-    return updateDbRow("users/"+uid+"/rooms/"+room,{archived:false}).then(()=>{
+    return dearchiveRoom(uid,room).then(()=>{
         return {statusCode:200};
     }).catch((error)=>{
         return {statusCode:500,error};
     });
 });
 
+const dearchiveRoom = function(uid,room){
+    return new Promise((resolve,reject)=>{
+        return updateDbRow("users/"+uid+"/rooms/"+room,{archived:false}).then(()=>{
+            return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
 exports.deleteRoom = functions.https.onCall((data,context)=>{
     if(!data || data.roomName==="")
         return {statusCode:500,error:"oda ismi boş olamaz."}
-        var room = data.roomName;
-        var uid = context.auth.uid;
-        return updateDbRow("users/"+uid+"/rooms/"+room,{deleted:true}).then(()=>{
+    var room = data.roomName;
+    var uid = context.auth.uid;
+    var name = data.displayName;
+    return deleteRoom(uid,room).then(()=>{
+        var message = name + " Kabin'den Ayrıldı!";
+        return sendNewMessage(0,room,message).then(()=>{
             return {statusCode:200};
-        }).catch((error)=>{
-            return {statusCode:500,error};
         });
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    });
 });
 
+const deleteRoom = function(uid,room){
+    return new Promise((resolve,reject)=>{
+        return updateDbRow("users/"+uid+"/rooms/"+room,{deleted:true}).then(()=>{
+            return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
+const awakeDeletedRoom = function(uid,room){
+    return new Promise((resolve,reject)=>{
+        return updateDbRow("users/"+uid+"/rooms/"+room,{deleted:false}).then(()=>{
+            return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
 /**
  * returns promise with a displayName string given uid
  * @param uid user id that want to get name
