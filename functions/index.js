@@ -102,7 +102,7 @@ const addNewUser = function(displayName,email,uid,token){
                         image:"",
                     },
                     0:{
-                        lastMessage:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. İletişim formuydu, maildi falan hiç uğraşmayalım, di mi?",
+                        lastMessage:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. Sorularını ya da taleplerini mutlaka iletmeni bekliyorum. İyi uçuşlar :)",
                         timeStamp:currentTimeStamp,
                         isAlive:true,
                         mustShown:true,
@@ -128,7 +128,7 @@ const addNewUser = function(displayName,email,uid,token){
                                 messageType:0,
                                 sender:0,
                                 messageDate:currentTimeStamp,
-                                message:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. İletişim formuydu, maildi falan hiç uğraşmayalım, di mi?"
+                                message:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. Aklına takılan, önermek istediğin ya da şikayetin olursa mutlaka yazmanı bekliyorum. Şimdiden iyi uçuşlar dilerim."
                             }
                         }
                     },
@@ -367,8 +367,7 @@ exports.sendNewMessage = functions.https.onCall((data,context)=>{
     var timeStamp = Date.now();
     return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
         return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
-            
-            var tokens = [];
+
             var flightCode = roomData.flightCode;
             var flightDate = roomData.flightDate;
             var users = roomData.users;
@@ -378,14 +377,38 @@ exports.sendNewMessage = functions.https.onCall((data,context)=>{
                 if(user === uid || user === 0){
                     continue;
                 }
-                tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
+                tokenPromises.push(getSnapShotOfPath("users/"+user));
             }
 
-            return Promise.all(tokenPromises).then((tokens)=>{
-                message = flightCode + " uçuşunda yeni bir mesaj var!";
-                return sendPushNotificationToRoom(tokens,message).then(()=>{
-                    return {statusCode:200};
-                })
+            var botMessagePromise = function(id){
+                return new Promise((resolve,reject)=>{
+                    if(roomName.startsWith('bot')){
+                        return updateDbRow("users/"+id,{alertAdmin:true}).then(()=>{
+                            return resolve();
+                        }).catch((error)=>{
+                            return reject(error);
+                        })
+                    }
+                    else
+                        return resolve();
+                });
+            };
+
+            return botMessagePromise(uid).then(()=>{
+                return Promise.all(tokenPromises).then((users)=>{
+                    var userTokens = [];
+                    users.forEach((user)=>{
+                        if(user.rooms[roomName].archived || user.rooms[roomName].deleted)
+                            var k = 5;
+                        else
+                            userTokens.push(user.token);
+                    });
+                    
+                    message = flightCode + " uçuşunda yeni bir mesaj var!";
+                    return sendPushNotificationToRoom(userTokens,message).then(()=>{
+                        return {statusCode:200};
+                    })
+                });
             });
         });
     }).catch((error)=>{
@@ -644,6 +667,61 @@ const setAdClick = function(uid,adId,timeStamp){
         });
     });
 }
+
+exports.isMailValid = functions.https.onCall((data,context)=>{
+    if(!data || data.emailDomain === ""){
+        return {statusCode:500,error:"e-posta alanı boş olamaz."}
+    }
+    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me"];
+    //var invalidDomains = ["gasmail","hotasmail","ousadstlook","yahasoo"];
+    var mail = data.emailDomain;
+    var valid = true;
+    invalidDomains.forEach((item)=>{
+        if(mail === item)
+            valid = false;
+    });
+    if(valid)
+        return {statusCode:200};
+    else
+        return {statusCode:400, error:"Üye olmak için şirket eposta adresini kullanmanı isteyeceğim."}
+});
+
+exports.archiveRoom = functions.https.onCall((data,context)=>{
+    if(!data || data.roomName==="")
+        return {statusCode:500,error:"oda ismi boş olamaz."}
+    var room = data.roomName;
+    var uid = context.auth.uid;
+    return updateDbRow("users/"+uid+"/rooms/"+room,{archived:true}).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    });
+});
+
+exports.dearchiveRoom = functions.https.onCall((data,context)=>{
+    if(!data || data.roomName==="")
+        return {statusCode:500,error:"oda ismi boş olamaz."}
+    var room = data.roomName;
+    var uid = context.auth.uid;
+    return updateDbRow("users/"+uid+"/rooms/"+room,{archived:false}).then(()=>{
+        return {statusCode:200};
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    });
+});
+
+
+exports.deleteRoom = functions.https.onCall((data,context)=>{
+    if(!data || data.roomName==="")
+        return {statusCode:500,error:"oda ismi boş olamaz."}
+        var room = data.roomName;
+        var uid = context.auth.uid;
+        return updateDbRow("users/"+uid+"/rooms/"+room,{deleted:true}).then(()=>{
+            return {statusCode:200};
+        }).catch((error)=>{
+            return {statusCode:500,error};
+        });
+});
 
 /**
  * returns promise with a displayName string given uid
