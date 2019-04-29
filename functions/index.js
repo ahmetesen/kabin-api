@@ -202,7 +202,30 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                 roomData.users[roomData.users.length] = uid;
                                 var message = name+" kabine katıldı.";
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
-                                    return {statusCode:200};
+
+                                    var tokenPromises = [];
+    
+                                    for(user of roomData.users){
+                                        if(user === uid || user === 0){
+                                            continue;
+                                        }
+                                        tokenPromises.push(getSnapShotOfPath("users/"+user));
+                                    }
+
+                                    return Promise.all(tokenPromises).then((users)=>{
+                                        var userTokens = [];
+                                        users.forEach((user)=>{
+                                            if(user.rooms[roomName].archived || user.rooms[roomName].deleted)
+                                                var k = 5;
+                                            else
+                                                userTokens.push(user.token);
+                                        });
+                                        
+                                        message = flightCode + " - "+name+" Kabine Katıldı!";
+                                        return sendPushNotificationToRoom(userTokens,message).then(()=>{
+                                            return {statusCode:200};
+                                        })
+                                    });
                                 });
                             });
                         });
@@ -720,7 +743,6 @@ exports.dearchiveRoom = functions.https.onCall((data,context)=>{
         return {statusCode:500,error};
     });
 });
-
 
 exports.deleteRoom = functions.https.onCall((data,context)=>{
     if(!data || data.roomName==="")
