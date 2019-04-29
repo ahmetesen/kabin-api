@@ -365,56 +365,67 @@ exports.sendNewMessage = functions.https.onCall((data,context)=>{
     var roomName = data.roomName;
     var message = data.message;
     var timeStamp = Date.now();
-    return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
-        return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
-
-            var flightCode = roomData.flightCode;
-            var flightDate = roomData.flightDate;
-            var users = roomData.users;
-            var tokenPromises = [];
-
-            for(user of roomData.users){
-                if(user === uid || user === 0){
-                    continue;
-                }
-                tokenPromises.push(getSnapShotOfPath("users/"+user));
-            }
-
-            var botMessagePromise = function(id){
-                return new Promise((resolve,reject)=>{
-                    if(roomName.startsWith('bot')){
-                        return updateDbRow("users/"+id,{alertAdmin:true}).then(()=>{
-                            return resolve();
-                        }).catch((error)=>{
-                            return reject(error);
-                        })
-                    }
-                    else
-                        return resolve();
-                });
-            };
-
-            return botMessagePromise(uid).then(()=>{
-                return Promise.all(tokenPromises).then((users)=>{
-                    var userTokens = [];
-                    users.forEach((user)=>{
-                        if(user.rooms[roomName].archived || user.rooms[roomName].deleted)
-                            var k = 5;
-                        else
-                            userTokens.push(user.token);
-                    });
-                    
-                    message = flightCode + " uçuşunda yeni bir mesaj var!";
-                    return sendPushNotificationToRoom(userTokens,message).then(()=>{
-                        return {statusCode:200};
-                    })
-                });
-            });
-        });
+    
+    return sendNewMessage(uid,roomName,message,timeStamp).then(()=>{
+        return {statusCode:200};
     }).catch((error)=>{
         return {statusCode:500,error:error};
     });
 });
+
+const sendNewMessage = function(uid,roomName,message,timeStamp){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
+            return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
+    
+                var flightCode = roomData.flightCode;
+                var flightDate = roomData.flightDate;
+                var users = roomData.users;
+                var tokenPromises = [];
+    
+                for(user of roomData.users){
+                    if(user === uid || user === 0){
+                        continue;
+                    }
+                    tokenPromises.push(getSnapShotOfPath("users/"+user));
+                }
+    
+                var botMessagePromise = function(id){
+                    return new Promise((resolve,reject)=>{
+                        if(roomName.startsWith('bot')){
+                            return updateDbRow("users/"+id,{alertAdmin:true}).then(()=>{
+                                return resolve();
+                            }).catch((error)=>{
+                                return reject(error);
+                            })
+                        }
+                        else
+                            return resolve();
+                    });
+                };
+    
+                return botMessagePromise(uid).then(()=>{
+                    return Promise.all(tokenPromises).then((users)=>{
+                        var userTokens = [];
+                        users.forEach((user)=>{
+                            if(user.rooms[roomName].archived || user.rooms[roomName].deleted)
+                                var k = 5;
+                            else
+                                userTokens.push(user.token);
+                        });
+                        
+                        message = flightCode + " uçuşunda yeni bir mesaj var!";
+                        return sendPushNotificationToRoom(userTokens,message).then(()=>{
+                            return resolve();
+                        })
+                    });
+                });
+            });
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
 
 const sendPushNotificationToRoom = async function(tokens,message){
     let messages = [];
