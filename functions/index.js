@@ -102,7 +102,7 @@ const addNewUser = function(displayName,email,uid,token){
                         image:"",
                     },
                     0:{
-                        lastMessage:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. Sorularını ya da taleplerini mutlaka iletmeni bekliyorum. İyi uçuşlar :)",
+                        lastMessage:"Kabin'e hoş geldin. İhtiyacın halinde bana buradan ulaşabilirsin. Ben de en kısa sürede sana buradan cevap vereceğim. Aklına takılan, önermek istediğin ya da şikayetin olursa mutlaka yazmanı bekliyorum. Şimdiden iyi uçuşlar dilerim.",
                         timeStamp:currentTimeStamp,
                         isAlive:true,
                         mustShown:true,
