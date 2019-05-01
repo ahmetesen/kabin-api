@@ -889,14 +889,14 @@ exports.getBotRoomList = functions.https.onCall((data,context)=>{
     var mail = context.auth.token.email;
     if(mail !== adminMail)
         return {statusCode:401,error:"User has not admin rights"}
-    return getAllUsers().then((users)=>{
+    return getAllVerifiedUsers().then((users)=>{
         return {statusCode:200,users:users};
     }).catch((error)=>{
         return {statusCode:500,error:error}
     })
 });
 
-const getAllUsers = function(){
+const getAllVerifiedUsers = function(){
     return new Promise((resolve,reject)=>{
         return getSnapShotOfPath("users").then((data)=>{
             var users = [];
@@ -904,6 +904,30 @@ const getAllUsers = function(){
                 users.push({id:key, displayName:data[key].displayName, email: data[key].email, alertAdmin:data[key].alertAdmin })
             }
             return resolve(users);
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
+exports.getAllUsers = functions.https.onCall((data,context)=>{
+    var mail = context.auth.token.email;
+    if(mail !== adminMail)
+        return {statusCode:401,error:"User has not admin rights"}
+    return getAllUsers().then((response)=>{
+        if(response && response.users)
+            return {statusCode:200,response:response};
+        else
+            return {statusCode:400,response:null};
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+});
+
+const getAllUsers = function(){
+    return new Promise((resolve,reject)=>{
+        return admin.auth().listUsers(1000).then((response)=>{
+            return resolve(response);
         }).catch((error)=>{
             return reject(error);
         });
