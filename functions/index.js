@@ -185,6 +185,33 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
     var timeStamp = data.timeStamp;
     var flightCode = data.flightCode;
     var roomName = timeStamp + '+' + flightCode;
+    var flightDate = "";
+    var newRoomName="";
+    var year="";
+    var month ="";
+    var day = "";
+    if(data.year&&data.month&&data.day&&data.year!==""&&data.month!==""&&data.day!==""){
+        year = data.year;
+        month = data.month;
+        day = data.day;
+    }
+    else{
+        var threeHour = new Date(3*60*60*1000).getTime();
+        timeStamp = Number.parseInt(timeStamp);
+        var total = timeStamp+threeHour;
+        var currentDate = new Date(total);
+        year = currentDate.getFullYear().toString();
+        month = (currentDate.getMonth()+1).toString();
+        day = currentDate.getDate().toString();
+    }
+    if(month.length < 2)
+        month = "0"+month;
+    if(day.length<2)
+        day = "0"+day;
+    flightDate = year+""+month+""+day
+    newRoomName = flightDate+"+"+flightCode;
+
+    roomName = newRoomName;
     
     return checkAndGetSnapShotOfPath('users/'+uid+'/'+'/rooms/'+roomName).then((usersRoomData)=>{
         if(usersRoomData && usersRoomData.deleted!==true && usersRoomData.archived !== true){
@@ -212,21 +239,18 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                     var lastMessageTime = roomData.messages[roomData.messages.length-1].messageDate;
                     var isAlive = roomData.isAlive;
                     if(roomData.users.indexOf(uid)<0){
-                        return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
+                        return attachNewRoomToUser(uid,flightCode,flightDate,lastMessage,isAlive).then(()=>{
                             return attachNewUserToRoom(uid,roomName,roomData.users.length).then(()=>{
                                 roomData.users[roomData.users.length] = uid;
                                 var message = name+" Kabin'e Katıldı!";
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
-
                                     var tokenPromises = [];
-    
                                     for(user of roomData.users){
                                         if(user === uid || user === 0){
                                             continue;
                                         }
                                         tokenPromises.push(getSnapShotOfPath("users/"+user));
                                     }
-
                                     return Promise.all(tokenPromises).then((users)=>{
                                         var userTokens = [];
                                         users.forEach((user)=>{
@@ -235,24 +259,23 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                             else
                                                 userTokens.push(user.token);
                                         });
-                                        
                                         message = flightCode + " - "+name+" Kabin'e Katıldı!";
                                         return sendPushNotificationToRoom(userTokens,message).then(()=>{
                                             return {statusCode:200};
-                                        })
+                                        });
                                     });
                                 });
                             });
                         });
                     }
                     else{
-                        return attachNewRoomToUser(uid,flightCode,timeStamp,lastMessage,isAlive).then(()=>{
+                        return attachNewRoomToUser(uid,flightCode,flightDate,lastMessage,isAlive).then(()=>{
                             return {statusCode:200};
                         });
                     }
                 }
                 else{
-                    return createNewRoomAndBootstrapWithUser(uid,flightCode,timeStamp).then(()=>{
+                    return createNewRoomAndBootstrapWithUser(uid,flightCode,timeStamp,flightDate).then(()=>{
                         return {statusCode:200};
                     });
                 }
@@ -261,7 +284,6 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
     }).catch((error)=>{
         return {statusCode:500,error:error};
     });
-
 });
 
 const sendMessageToRoomAndUpdateAllUsersLastMessage = function(roomName, timeStamp, senderId, messageType, message, roomData){
@@ -330,14 +352,14 @@ const attachNewUserToRoom = function(uid,roomName,order){
     })
 }
 
-const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
+const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp,flightDate){
     return new Promise((resolve,reject)=>{
         return getNameFromUid(uid).then((name)=>{
-            var message = name+" Kabin'e katıldı.";
+            var message = name+" Kabin'e Katıldı!";
             var isAlive = true;
-            return db.ref('rooms/' + timeStamp +'+'+ flightCode).set({
+            return db.ref('rooms/' + flightDate +'+'+ flightCode).set({
                 flightCode:flightCode,
-                flightDate:timeStamp,
+                flightDate:flightDate,
                 isAlive:isAlive,
                 users:{
                     0:0,
@@ -346,7 +368,7 @@ const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
                 messages:{
                     0:{
                         message:'Kabin oluşturuldu.',
-                        messageDate:timeStamp,
+                        messageDate:Date.now(),
                         messageType:0,
                         sender:0,
                         hiddenFrom:{
@@ -354,7 +376,7 @@ const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
                     },
                     1:{
                         message:message,
-                        messageDate:timeStamp,
+                        messageDate:Date.now(),
                         messageType:0,
                         sender:0,
                         hiddenFrom:{
@@ -368,7 +390,7 @@ const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp){
                     return reject(error);
                 }
                 else{
-                    return attachNewRoomToUser(uid,flightCode,timeStamp,message,isAlive).then(()=>{
+                    return attachNewRoomToUser(uid,flightCode,flightDate,message,isAlive).then(()=>{
                         return resolve();
                     }).catch((error)=>{
                         return reject(error);
@@ -721,7 +743,7 @@ exports.isMailValid = functions.https.onCall((data,context)=>{
     if(!data || data.emailDomain === ""){
         return {statusCode:500,error:"e-posta alanı boş olamaz."}
     }
-    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me"];
+    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive"];
     //var invalidDomains = ["gasmail","hotasmail","ousadstlook","yahasoo"];
     var mail = data.emailDomain;
     var valid = true;
@@ -972,6 +994,23 @@ exports.markUserAsAlertRead = functions.https.onCall((data,context)=>{
         return {statusCode:500}
     });
 });
+
+
+exports.setNewEmailAddress = functions.https.onCall((data,context)=>{
+
+});
+
+const setNewEmailAddress = function(oldAddress,newAddress){
+    return new Promise((resolve,reject)=>{
+        return admin.auth().getUserByEmail(oldAddress).then((user)=>{
+            return admin.auth().updateUser(user.uid,{email:newAddress}).then((user)=>{
+                return resolve();
+            })
+        }).catch((error)=>{
+            return reject(error);
+        })
+    });
+}
 
  /**
   * Admin Site functions end.
