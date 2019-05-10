@@ -242,7 +242,9 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                         return attachNewRoomToUser(uid,flightCode,flightDate,lastMessage,isAlive).then(()=>{
                             return attachNewUserToRoom(uid,roomName,roomData.users.length).then(()=>{
                                 roomData.users[roomData.users.length] = uid;
-                                var message = name+" Kabin'e Katıldı!";
+                                randomMessages = ["Herkesin uçuş öncesi bavulları hazır mı?","Nerede buluşacağınızı belirlemeye ne dersiniz?","Limana ulaşmak zor mu? Ekiptekiler birbirine yardımcı olabilir belki?", "Ekip odasında buluşmak artık işkence değil!", "Hoş geldin "+name+" :)",name+", hoş geldin :)", name+", burada yalnız değilsin, uçuştaki diğer görevliler de burada :)","Şarj aletini almayı unutmadın, değil mi "+name+"? :)"];
+                                selectedMoodMessage = randomMessages[Math.round(Math.random()*(randomMessages.length-1))];
+                                var message = name+" Kabin'e Katıldı!"+"\n"+selectedMoodMessage;
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
                                     var tokenPromises = [];
                                     for(user of roomData.users){
@@ -259,7 +261,7 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                             else
                                                 userTokens.push(user.token);
                                         });
-                                        message = flightCode + " - "+name+" Kabin'e Katıldı!";
+                                        message = flightCode + " - "+name+" Kabin'e Katıldı! Ona bir hoş geldin demek ister misin?";
                                         return sendPushNotificationToRoom(userTokens,message).then(()=>{
                                             return {statusCode:200};
                                         });
@@ -355,7 +357,7 @@ const attachNewUserToRoom = function(uid,roomName,order){
 const createNewRoomAndBootstrapWithUser = function(uid,flightCode,timeStamp,flightDate){
     return new Promise((resolve,reject)=>{
         return getNameFromUid(uid).then((name)=>{
-            var message = name+" Kabin'e Katıldı!";
+            var message = name+", bu uçuşa ilk katılan sen oldun. Hoş geldin :) Seninle aynı uçuşta görevli olan arkadaşların geldikçe bildirim alacaksın. Onlar geldiğinde sen de hoş geldin demeyi unutma :)";
             var isAlive = true;
             return db.ref('rooms/' + flightDate +'+'+ flightCode).set({
                 flightCode:flightCode,
