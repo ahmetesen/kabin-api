@@ -39,7 +39,7 @@ exports.saveNewUser = functions.https.onCall((data,context)=>{
         return {status:400, errorCode:0, error: "displayName ya da email gönderilmedi :("};
     return checkUserExist(uid).then((user)=>{
         if(user)
-        { //TODO check user's push token. If not equal with db, change it.
+        {
             if(user.token && user.token === token)
                 return {status:200,user};
             else
@@ -247,10 +247,12 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                 var message = name+" Kabin'e Katıldı!"+"\n"+selectedMoodMessage;
                                 return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,0,message,roomData).then(()=>{
                                     var tokenPromises = [];
+                                    var tokenUsers = [];
                                     for(user of roomData.users){
                                         if(user === uid || user === 0){
                                             continue;
                                         }
+                                        tokenUsers.push(user);
                                         tokenPromises.push(getSnapShotOfPath("users/"+user));
                                     }
                                     return Promise.all(tokenPromises).then((users)=>{
@@ -262,7 +264,7 @@ exports.addOrJoinRoom = functions.https.onCall((data,context)=>{
                                                 userTokens.push(user.token);
                                         });
                                         message = flightCode + " - "+name+" Kabin'e Katıldı! Ona bir hoş geldin demek ister misin?";
-                                        return sendPushNotificationToRoom(userTokens,message).then(()=>{
+                                        return sendPushNotificationToRoom(userTokens,message,tokenUsers).then(()=>{
                                             return {statusCode:200};
                                         });
                                     });
@@ -444,12 +446,14 @@ const sendNewMessage = function(uid,roomName,message,timeStamp){
                 var flightDate = roomData.flightDate;
                 var users = roomData.users;
                 var tokenPromises = [];
+                var tokenUsers = [];
     
                 for(user of roomData.users){
                     if(user === uid || user === 0){
                         continue;
                     }
                     tokenPromises.push(getSnapShotOfPath("users/"+user));
+                    tokenUsers.push(user);
                 }
     
                 var botMessagePromise = function(id){
@@ -477,7 +481,7 @@ const sendNewMessage = function(uid,roomName,message,timeStamp){
                         });
                         
                         message = flightCode + " uçuşunda yeni bir mesaj var!";
-                        return sendPushNotificationToRoom(userTokens,message).then(()=>{
+                        return sendPushNotificationToRoom(userTokens,message,tokenUsers).then(()=>{
                             return resolve();
                         })
                     });
@@ -489,7 +493,7 @@ const sendNewMessage = function(uid,roomName,message,timeStamp){
     });
 }
 
-const sendPushNotificationToRoom = async function(tokens,message){
+const sendPushNotificationToRoom = async function(tokens,message,users){
     let messages = [];
     for (let pushToken of tokens){
         if (!Expo.isExpoPushToken(pushToken)){
@@ -503,13 +507,19 @@ const sendPushNotificationToRoom = async function(tokens,message){
         })
     }
     let chunks = expo.chunkPushNotifications(messages);
-    let tickets = [];
     (()=>{
         for (let chunk of chunks){
             try{
                 expo.sendPushNotificationsAsync(chunk).then((ticketChunk)=>{
-                    console.log(ticketChunk);
-                    tickets.push(...ticketChunk);
+                    if(ticketChunk.length<1){
+                        return 0;
+                    }
+                    for(let id of ticketChunk){
+                        if(id.status === 'error' && id.details.error === 'DeviceNotRegistered'){
+                            var userIndex = ticketChunk.indexOf(id);
+                            removeUserToken(users[userIndex]);
+                        }
+                    }
                     return 0;
                 }).catch((error)=>{
                     console.error(error);
@@ -520,6 +530,20 @@ const sendPushNotificationToRoom = async function(tokens,message){
             }
         }
     })();
+}
+
+const removeUserToken = function(uid){
+    return new Promise((resolve,reject)=>{
+        console.log(uid);
+        db.ref('users/'+uid+'').update({token:""}).then((error)=>{
+            if(error)
+                return reject(error);
+            else
+                return resolve();
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
 }
 
 exports.userSeesMessages = functions.https.onCall((data,context)=>{
@@ -537,7 +561,7 @@ exports.userSeesMessages = functions.https.onCall((data,context)=>{
 
 const userSeesAllMessages = function(uid,roomName){
     return new Promise((resolve,reject)=>{
-        db.ref('users/'+uid+'/rooms/'+roomName+'/readYet').set(true,(error)=>{
+        return db.ref('users/'+uid+'/rooms/'+roomName+'/readYet').set(true,(error)=>{
             if(error)
                 return reject(error);
             else
@@ -967,6 +991,9 @@ exports.sendMessageFromAdminToUser = functions.https.onCall((data,context)=>{
     var roomName = data.roomName;
     var message = data.message;
     var timeStamp = Date.now();
+    var tokenUsers=[];
+
+    //TODO: Gereksiz bir alan olmuş burası. Burada sadece target uid almak yeterdi.
     return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
         return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
             var tokenPromises = [];
@@ -975,10 +1002,11 @@ exports.sendMessageFromAdminToUser = functions.https.onCall((data,context)=>{
                     continue;
                 }
                 tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
+                tokenUsers.push(user);
             }
             return Promise.all(tokenPromises).then((tokens)=>{
                 message = "Kabin İletişim'den yeni bir mesaj var!";
-                return sendPushNotificationToRoom(tokens,message).then(()=>{
+                return sendPushNotificationToRoom(tokens,message,tokenUsers).then(()=>{
                     return {statusCode:200};
                 });
             });
