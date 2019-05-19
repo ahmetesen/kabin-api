@@ -517,7 +517,8 @@ const sendPushNotificationToRoom = async function(tokens,message,users){
                     for(let id of ticketChunk){
                         if(id.status === 'error' && id.details.error === 'DeviceNotRegistered'){
                             var userIndex = ticketChunk.indexOf(id);
-                            removeUserToken(users[userIndex]);
+                            if(users[userIndex])
+                                removeUserToken(users[userIndex]);
                         }
                     }
                     return 0;
@@ -534,15 +535,16 @@ const sendPushNotificationToRoom = async function(tokens,message,users){
 
 const removeUserToken = function(uid){
     return new Promise((resolve,reject)=>{
-        console.log(uid);
-        db.ref('users/'+uid+'').update({token:""}).then((error)=>{
-            if(error)
+        if(uid && uid!==""){
+            db.ref('users/'+uid+'').update({token:""}).then((error)=>{
+                if(error)
+                    return reject(error);
+                else
+                    return resolve();
+            }).catch((error)=>{
                 return reject(error);
-            else
-                return resolve();
-        }).catch((error)=>{
-            return reject(error);
-        });
+            });
+        }
     });
 }
 
@@ -769,7 +771,7 @@ exports.isMailValid = functions.https.onCall((data,context)=>{
     if(!data || data.emailDomain === ""){
         return {statusCode:500,error:"e-posta alanı boş olamaz."}
     }
-    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive"];
+    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive","mail"];
     //var invalidDomains = ["gasmail","hotasmail","ousadstlook","yahasoo"];
     var mail = data.emailDomain;
     var valid = true;
