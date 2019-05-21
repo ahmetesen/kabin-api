@@ -503,7 +503,8 @@ const sendPushNotificationToRoom = async function(tokens,message,users){
         messages.push({
             to: pushToken,
             sound: 'default',
-            body: message
+            body: message,
+            badge:1
         })
     }
     let chunks = expo.chunkPushNotifications(messages);
@@ -771,7 +772,7 @@ exports.isMailValid = functions.https.onCall((data,context)=>{
     if(!data || data.emailDomain === ""){
         return {statusCode:500,error:"e-posta alanı boş olamaz."}
     }
-    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive","mail"];
+    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive","mail","kardes"];
     //var invalidDomains = ["gasmail","hotasmail","ousadstlook","yahasoo"];
     var mail = data.emailDomain;
     var valid = true;
