@@ -786,6 +786,28 @@ exports.isMailValid = functions.https.onCall((data,context)=>{
         return {statusCode:400, error:"Üye olmak için şirket eposta adresini kullanmanı isteyeceğim."}
 });
 
+exports.setNewDisplayName = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var displayName = data.displayName;
+    return setNewDisplayName(uid,displayName).then(()=>{
+        return {statusCode:200}
+    }).catch((error)=>{
+        return {statusCode:500,error:error}
+    });
+});
+
+const setNewDisplayName = function(uid,displayName){
+    return new Promise((resolve,reject)=>{
+        return admin.auth().updateUser(uid,{displayName:displayName}).then((user)=>{
+            return updateDbRow("users/"+uid,{displayName:displayName}).then(()=>{
+                return resolve();
+            });
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
+
 exports.archiveRoom = functions.https.onCall((data,context)=>{
     if(!data || data.roomName==="")
         return {statusCode:500,error:"oda ismi boş olamaz."}
@@ -930,6 +952,35 @@ const updateDbRow = function(path,value){
     });
 }
 
+exports.getProfileDetailsForGuest = functions.https.onCall((data,context)=>{
+    var uid = context.auth.uid;
+    var userId = data.userId;
+    return getProfileDetailsForGuest(userId).then((data)=>{
+        return {statusCode:200,user:data};
+    }).catch((error)=>{
+        return {statusCode:500,error};
+    });
+});
+
+const getProfileDetailsForGuest = function(userId){
+    return new Promise((resolve,reject)=>{
+        getSnapShotOfPath("users/"+userId).then((data)=>{
+            var rooms = [];
+            for (const room in data.rooms) {
+                if(room !=="0" && room!=="Z")
+                    rooms.push(room);
+            }
+            var userData = {
+                about:data.about,
+                displayName:data.displayName,
+                rooms:rooms
+            };
+            return resolve(userData);
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
 
 
 /**
