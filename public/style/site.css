@@ -50,3 +50,6 @@ body{
     color: whitesmoke;
     font-weight: 200;
   }
+  textarea{
+    width:100%
+  }

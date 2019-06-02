@@ -493,19 +493,31 @@ const sendNewMessage = function(uid,roomName,message,timeStamp){
     });
 }
 
-const sendPushNotificationToRoom = async function(tokens,message,users){
+const sendPushNotificationToRoom = async function(tokens,message,users,title){
     let messages = [];
     for (let pushToken of tokens){
         if (!Expo.isExpoPushToken(pushToken)){
             console.error(`Push token ${pushToken} is not a valid Expo push token`);
             continue;
         }
-        messages.push({
-            to: pushToken,
-            sound: 'default',
-            body: message,
-            badge:1
-        })
+        if(title && title!==""){
+            messages.push({
+                to: pushToken,
+                sound: 'default',
+                title:title,
+                body: message,
+                badge:1
+            })
+        }
+        else{
+            messages.push({
+                to: pushToken,
+                sound: 'default',
+                body: message,
+                badge:1
+            })
+        }
+        
     }
     let chunks = expo.chunkPushNotifications(messages);
     (()=>{
@@ -1041,37 +1053,52 @@ exports.sendMessageFromAdminToUser = functions.https.onCall((data,context)=>{
     if(mail !== adminMail)
         return {statusCode:401,error:"User has not admin rights"}
 
-    var uid = 0;
     var roomName = data.roomName;
-    var message = data.message;
+    var textMessage = data.textMessage;
+    var pushMessage = data.pushMessage;
     var timeStamp = Date.now();
-    var tokenUsers=[];
 
-    //TODO: Gereksiz bir alan olmuş burası. Burada sadece target uid almak yeterdi.
-    return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
-        return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,uid,1,message,roomData).then(()=>{
-            var tokenPromises = [];
-            for(user of roomData.users){
-                if(user === uid || user === 0){
-                    continue;
-                }
-                tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
-                tokenUsers.push(user);
-            }
-            return Promise.all(tokenPromises).then((tokens)=>{
-                message = "Kabin İletişim'den yeni bir mesaj var!";
-                return sendPushNotificationToRoom(tokens,message,tokenUsers).then(()=>{
-                    return {statusCode:200};
-                });
-            });
-        });
+    return sendMessageFromAdmin(roomName,timeStamp,textMessage,pushMessage).then(()=>{
+        return {statusCode:200}
     }).catch((error)=>{
         return {statusCode:500,error:error};
     });
+    //TODO: Gereksiz bir alan olmuş burası. Burada sadece target uid almak yeterdi.
+    
 });
+
+
+const sendMessageFromAdmin = function(roomName,timeStamp,textMessage,pushMessage,title){
+    return new Promise((resolve,reject)=>{
+        return getSnapShotOfPath('rooms/'+roomName).then((roomData)=>{
+            return sendMessageToRoomAndUpdateAllUsersLastMessage(roomName,timeStamp,0,1,textMessage,roomData).then(()=>{
+                var tokenUsers = [];
+                var tokenPromises = [];
+                for(user of roomData.users){
+                    if(user === 0){
+                        continue;
+                    }
+                    tokenPromises.push(getSnapShotOfPath("users/"+user+"/token"));
+                    tokenUsers.push(user);
+                }
+                return Promise.all(tokenPromises).then((tokens)=>{
+                    var message = "Kabin İletişim'den yeni bir mesaj var!";
+                    if (pushMessage && pushMessage !== "")
+                        message = pushMessage;
+                    return sendPushNotificationToRoom(tokens,message,tokenUsers,title).then(()=>{
+                        return resolve();
+                    });
+                });
+            });
+        }).catch((error)=>{
+            return reject(error);
+        });
+    });
+}
 
 exports.markUserAsAlertRead = functions.https.onCall((data,context)=>{
     var uid = data.uid;
+    //TODO: Check is user admin and check the call on client
     return updateDbRow("users/"+uid,{alertAdmin:false}).then(()=>{
         return {statusCode:200}
     }).catch((error)=>{
@@ -1095,6 +1122,35 @@ const setNewEmailAddress = function(oldAddress,newAddress){
         })
     });
 }
+
+exports.sendMessageToAll = functions.https.onCall((data,context)=>{
+    var mail = context.auth.token.email;
+    if(mail !== adminMail)
+        return {statusCode:401,error:"User has not admin rights"}
+    var pushText = data.pushText;
+    var messageText = data.messageText;
+    var pushTitle = data.pushTitle;
+    
+    if(!pushText || !messageText || messageText === "" || pushText === "")
+        return {statusCode:500,error:"parameter error"};
+
+    return getSnapShotOfPath("users").then((data)=>{
+        var keys = [];
+        for (const key in data) {
+            if (data.hasOwnProperty(key)) {
+                if(key !== "0")
+                keys.push(key);
+            }
+        }
+        //keys = ["QDUIOM88PRYrXTwCsWOViUguhvB3","O7rftfodn4hOigWDhooMSZkxXen2"];
+        keys.forEach((key)=>{
+            sendMessageFromAdmin("bot-"+key,Date.now(),messageText,pushText,pushTitle);
+        });
+        return {statusCode:200}
+    }).catch((error)=>{
+        return {statusCode:500,error:error};
+    });
+})
 
  /**
   * Admin Site functions end.
