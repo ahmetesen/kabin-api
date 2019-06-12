@@ -784,7 +784,7 @@ exports.isMailValid = functions.https.onCall((data,context)=>{
     if(!data || data.emailDomain === ""){
         return {statusCode:500,error:"e-posta alanı boş olamaz."}
     }
-    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive","mail","kardes"];
+    var invalidDomains = ["gmail","hotmail","outlook","yahoo","icloud","me","windowslive","mail","kardes","msn"];
     //var invalidDomains = ["gasmail","hotasmail","ousadstlook","yahasoo"];
     var mail = data.emailDomain;
     var valid = true;
@@ -1142,7 +1142,6 @@ exports.sendMessageToAll = functions.https.onCall((data,context)=>{
                 keys.push(key);
             }
         }
-        //keys = ["QDUIOM88PRYrXTwCsWOViUguhvB3","O7rftfodn4hOigWDhooMSZkxXen2"];
         keys.forEach((key)=>{
             sendMessageFromAdmin("bot-"+key,Date.now(),messageText,pushText,pushTitle);
         });
