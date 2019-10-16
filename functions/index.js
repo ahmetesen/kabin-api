@@ -14,11 +14,33 @@ const config = functions.config().firebase;
 admin.initializeApp(config);
 var db = admin.database();
 let expo = new Expo();
-const adminMail = "ahmetesen88@gmail.com"
+const adminMail = "ahmetesen88@gmail.com";
 
-exports.helloWorld = functions.https.onRequest((request, response) => {
-    return {data: "hello there"};
+const fsOps = require('./a_/firestoreOperations');
+const responses = require('./responses');
+
+exports.a_saveDeviceToFirestore = functions.https.onCall((data,context)=>{
+    const uid = (context.auth)?context.auth.uid:undefined;
+    return fsOps.saveDevice(data.appVersion,data.contentVersion,data.device, data.deviceId,data.os,data.osVersion,data.pushToken,uid).then(()=>{
+        return responses.successResponse();
+    }).catch((err)=>{
+        return responses.serverFailResponse(err);
+    });
 });
+
+exports.a_saveErrorToFirestore = functions.https.onCall((data,context)=>{
+    let uid = (context.auth)?context.auth.uid:undefined;
+    return fsOps.saveError(data.errorClass,data.errorMethod,data.errorString,data.deviceId,data.pushToken,uid);
+});
+
+
+
+
+
+
+
+
+
 
 exports.setPushToken = functions.https.onCall((data,context)=>{
     var uid = context.auth.uid;
@@ -913,6 +935,8 @@ const getNameFromUid = function(uid){
     });
 }
 
+
+
 /**
  * if there is no snapshot, method returns reject with string
  * @param path snapshot's path 
@@ -995,6 +1019,7 @@ const getProfileDetailsForGuest = function(userId){
 }
 
 
+// #region admin
 /**
  * Admin Site functions...
  */
@@ -1154,3 +1179,4 @@ exports.sendMessageToAll = functions.https.onCall((data,context)=>{
  /**
   * Admin Site functions end.
   */
+// #endregion

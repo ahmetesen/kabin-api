@@ -1,0 +1,20 @@
+
+
+sudo functions start   
+functions deploy a_saveDeviceToFirestore --trigger-http
+functions inspect a_saveDeviceToFirestore [--port 6000] [--pause true]
+functions reset a_saveDeviceToFirestore
+functions stop
+
+
+remote deploy: 
+
+firebase deploy --only functions:a_saveDeviceToFirestore
+
+
+Kabin Güncellendi!
+
+Uçuş arkadaşlarının profil fotoğraflarını gördün mü? Peki sen fotoğrafını ekledin mi?
+
+Selam, Kabin güncellendi. Profil sekmesinden kendi profil fotoğrafını değiştirebilir, kendin hakkında bilgiler yazabilir, hatta adını dahi değiştirebilirsin! Uçuş arkadaşlarının profillerini ziyaret edebilir, geçmişte birlikte uçtuğunuz uçuşlarını da görebilirsin. Hala güncellemediysen: https://kabinapp.firebaseapp.com/download.html
+Bu arada, sıradaki uçuşlarını da eklemeyi unutma:)
