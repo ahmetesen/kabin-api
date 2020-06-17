@@ -1,15 +1,19 @@
 
 
 sudo functions start   
-functions deploy a_saveDeviceToFirestore --trigger-http
-functions inspect a_saveDeviceToFirestore [--port 6000] [--pause true]
-functions reset a_saveDeviceToFirestore
+functions deploy v2 --trigger-http
+functions inspect v2 [--port 6000] [--pause true]
+functions reset v2
 functions stop
+
+
+npm run build
+firebase emulators:start --inspect-functions
 
 
 remote deploy: 
 
-firebase deploy --only functions:a_saveDeviceToFirestore
+firebase deploy --only functions:v2
 
 
 Kabin Güncellendi!
