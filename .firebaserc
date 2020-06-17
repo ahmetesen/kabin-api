@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "kabinapp"
+    "default": "kabin-64963"
   },
   "targets": {
     "kabin-64963": {
@@ -11,7 +11,7 @@
         "kabinapp": [
           "kabinapp"
         ],
-        "kabinadmin":[
+        "kabinadmin": [
           "kabinadmin"
         ]
       }
