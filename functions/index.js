@@ -1,12 +1,3 @@
-process.env.FIREBASE_CONFIG = JSON.stringify({
-    apiKey: "AIzaSyBQn5eEA_v6_g2t_jviSE5kuWVIScgUOwg",
-    databaseURL: "https://kabin-64963.firebaseio.com",
-    storageBucket: "kabin-64963.appspot.com",
-    authDomain: "kabin-64963.firebaseapp.com",
-    messagingSenderId: "625321362515",
-    projectId: "kabin-64963"
-});
-
 const { Expo } = require('expo-server-sdk');
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
