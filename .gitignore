@@ -63,3 +63,7 @@ node_modules/
 
 # dotenv environment variables file
 .env
+functions/lib
+Functions/package-lock.json
+Package-lock.json
+credential.json
